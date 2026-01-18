@@ -55,12 +55,6 @@ class NBFConfig:
     # Safety invariance parameters
     window_size: int = 3  # Number of recent turns to analyze
     safety_decay: float = 0.9  # How quickly safety scores decay
-    
-    # Semantic classifier settings
-    use_semantic_classifier: bool = True  # Use pretrained model instead of keywords
-    semantic_model_name: str = "unitary/toxic-bert"  # HuggingFace model
-    semantic_threshold: float = 0.7  # Confidence threshold for harmful classification
-    fallback_to_keywords: bool = True  # Use keywords if semantic model unavailable
 
 
 @dataclass
@@ -115,12 +109,6 @@ class DynamicNBFIntegration:
             trajectory=[],
             steering_active=False,
             circuit_breaker_triggered=False,
-        
-        # Load semantic classifier if enabled
-        self.semantic_classifier = None
-        self.semantic_tokenizer = None
-        if self.config.use_semantic_classifier:
-            self.semantic_classifier, self.semantic_tokenizer = self._load_semantic_classifier()
             eta=self.config.base_eta,
             turn_count=0
         )
@@ -139,171 +127,6 @@ class DynamicNBFIntegration:
                 print(f"Loaded NBF models from {self.config.model_path}")
                 return models
             else:
-    
-    def _load_semantic_classifier(self) -> Tuple[Optional[Any], Optional[Any]]:
-        """
-        Load pretrained semantic classifier for content safety.
-        
-        Supports multiple models:
-        - unitary/toxic-bert: Toxicity classification
-        - facebook/roberta-hate-speech-dynabench-r4-target: Hate speech
-        - OpenAssistant/reward-model-deberta-v3-large-v2: Safety scorer
-        - Any HuggingFace text-classification model
-        
-        Returns:
-            Tuple of (model, tokenizer) or (None, None) if unavailable
-        """
-        try:
-            from transformers import AutoTokenizer, AutoModelForSequenceClassification
-            import torch
-            
-            print(f"Loading semantic classifier: {self.config.semantic_model_name}")
-            
-            tokenizer = AutoTokenizer.from_pretrained(self.config.semantic_model_name)
-            model = AutoModelForSequenceClassification.from_pretrained(
-                self.config.semantic_model_name
-            )
-            model.eval()
-            
-            print(f"✓ Semantic classifier loaded successfully")
-            return model, tokenizer
-            
-        except ImportError:
-            print("Warning: transformers library not available. Install with: pip install transformers")
-            if self.config.fallback_to_keywords:
-                print("Falling back to keyword-based classification")
-            return None, None
-        except Exception as e:
-            print(f"Warning: Could not load semantic classifier: {e}")
-            if self.config.fallback_to_keywords:
-                print("Falling back to keyword-based classification")
-            return None, None
-    
-    def _classify_with_semantic_model(self, text: str) -> Tuple[str, float]:
-        """
-        Classify text using semantic model.
-        
-        Args:
-            text: Input text to classify
-            
-        Returns:
-            Tuple of (context_type, confidence_score)
-        """
-        if self.semantic_classifier is None or self.semantic_tokenizer is None:
-            return None, 0.0
-        
-        try:
-            # Tokenize and run inference
-            inputs = self.semantic_tokenizer(
-                text, 
-                return_tensors="pt", 
-                truncation=True, 
-                max_length=512
-            )
-            
-            with torch.no_grad():
-                outputs = self.semantic_classifier(**inputs)
-                logits = outputs.logits
-                probs = torch.softmax(logits, dim=-1)[0]
-            
-            # Get prediction
-            predicted_class = torch.argmax(probs).item()
-            confidence = probs[predicted_class].item()
-            
-            # Map model output to our context types
-            # This mapping depends on the specific model used
-            context_mapping = self._get_semantic_model_mapping()
-            context_type = context_mapping.get(predicted_class, "general")
-            
-            return context_type, confidence
-            
-        except Exception as e:
-            print(f"Error in semantic classification: {e}")
-            return None, 0.0
-    
-    def _get_semantic_model_mapping(self) -> Dict[int, str]:
-        """
-        Map semantic model class IDs to our context types.
-        
-        Different models have different label schemes..
-        
-        Uses semantic classifier if available, falls back to keyword matching.
-        
-        Args:
-            user_message: Current user message
-            
-        Returns:
-            Context type string with confidence-based priority
-        """
-        # Try semantic classification first
-        if self.semantic_classifier is not None:
-            context_type, confidence = self._classify_with_semantic_model(user_message)
-            
-            if context_type is not None and confidence >= self.config.semantic_threshold:
-                # Refine with secondary analysis
-                refined_context = self._analyze_semantic_for_context(user_message, confidence)
-                return refined_context
-            elif not self.config.fallback_to_keywords:
-                # Semantic model available but low confidence, no fallback
-                return "general"
-        
-        # Fallback to keyword-based classification return {
-                0: "general",  # Safe content
-                1: "social_engineering"  # Toxic/harmful
-            }
-        
-        # hate-speech models: 0=not-hate, 1=hate
-        elif "hate" in model_name:
-            return {
-                0: "general",
-                1: "social_engineering"
-            }
-        
-        # reward/safety models: higher score = safer
-        elif "reward" in model_name or "safety" in model_name:
-            # These typically output a scalar score
-            # You'd need custom logic here
-            return {0: "general"}
-        
-        # Default mapping
-        return {
-            0: "general",
-            1: "social_engineering",
-            2: "medical",
-            3: "creative",
-            4: "technical"
-        }
-    
-    def _analyze_semantic_for_context(self, text: str, toxicity_score: float) -> str:
-        """
-        Perform secondary analysis to determine specific context type.
-        
-        If semantic model detects harmful content, determine if it's
-        medical, social_engineering, etc.
-        """
-        if toxicity_score < self.config.semantic_threshold:
-            # Safe content - check if creative or technical
-            text_lower = text.lower()
-            
-            creative_indicators = ["poem", "story", "fiction", "imagine", "creative"]
-            technical_indicators = ["code", "program", "function", "algorithm"]
-            
-            if any(ind in text_lower for ind in creative_indicators):
-                return "creative"
-            elif any(ind in text_lower for ind in technical_indicators):
-                return "technical"
-            
-            return "general"
-        
-        else:
-            # Harmful content - determine type
-            text_lower = text.lower()
-            
-            medical_indicators = ["drug", "weapon", "explosive", "chemical", "synthesis"]
-            if any(ind in text_lower for ind in medical_indicators):
-                return "medical"
-            
-            return "social_engineering"
                 print(f"Warning: NBF model not found at {self.config.model_path}")
                 print("Operating in simulation mode without actual NBF steering.")
                 return None

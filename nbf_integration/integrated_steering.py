@@ -209,6 +209,30 @@ if __name__ == "__main__":
         help="Maximum number of attack rounds (default: 1 to prevent context overflow)"
     )
     
+    # Semantic classifier arguments
+    parser.add_argument(
+        "--use_semantic_classifier",
+        action='store_true',
+        help="Enable semantic classifier instead of keyword matching"
+    )
+    parser.add_argument(
+        "--semantic_model",
+        type=str,
+        default="unitary/toxic-bert",
+        help="HuggingFace model name for semantic classification"
+    )
+    parser.add_argument(
+        "--semantic_threshold",
+        type=float,
+        default=0.7,
+        help="Confidence threshold for semantic classifier (0.0-1.0)"
+    )
+    parser.add_argument(
+        "--no_keyword_fallback",
+        action='store_true',
+        help="Disable fallback to keyword matching if semantic model fails"
+    )
+    
     args = parser.parse_args()
 
     # Initialize clients
@@ -237,7 +261,11 @@ if __name__ == "__main__":
             model_path=args.model_path,
             base_eta=args.threshold,
             min_eta=args.min_eta,
-            max_eta=args.max_eta
+            max_eta=args.max_eta,
+            use_semantic_classifier=args.use_semantic_classifier,
+            semantic_model_name=args.semantic_model,
+            semantic_threshold=args.semantic_threshold,
+            fallback_to_keywords=not args.no_keyword_fallback
         )
         
         integration = DynamicNBFIntegration(
@@ -252,6 +280,11 @@ if __name__ == "__main__":
         print(f"Circuit breaker enabled: {args.use_circuit_breaker}")
         print(f"Base threshold (η): {args.threshold}")
         print(f"Dynamic range: [{args.min_eta}, {args.max_eta}]")
+        print(f"Semantic classifier: {args.use_semantic_classifier}")
+        if args.use_semantic_classifier:
+            print(f"  Model: {args.semantic_model}")
+            print(f"  Threshold: {args.semantic_threshold}")
+            print(f"  Keyword fallback: {not args.no_keyword_fallback}")
         
     else:
         integration = None
