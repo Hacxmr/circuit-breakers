@@ -1,6 +1,18 @@
 # Semantic Classifier Integration Guide
 
+**Status**: Implemented and CLI-ready. Semantic models can be enabled via command-line flags or Python API.
+
 This guide explains how to use pretrained semantic classifiers instead of keyword-based classification for more robust content safety detection.
+
+## Current Implementation Status
+
+- ✓ Infrastructure implemented in `nbf_integration/__init__.py`
+- ✓ CLI arguments added to `integrated_steering.py`
+- ✓ Keyword-based classification working (default)
+- ✓ Semantic classifier loading mechanism ready
+- ⚠ Semantic models require `transformers` library: `pip install transformers`
+- ⚠ First model load downloads from HuggingFace (~400MB-1GB depending on model)
+- ✓ Automatic fallback to keywords if model unavailable
 
 ## Why Use Semantic Classifiers?
 
@@ -97,7 +109,58 @@ pip install google-api-python-client
 
 ## Usage Examples
 
-### Example 1: Basic Toxic-BERT Integration
+### Example 1: Command-Line Usage with Semantic Classifier
+
+```bash
+# Test with semantic classifier enabled
+python3 nbf_integration/integrated_steering.py \
+    --target_model phi-3.5-mini-instruct \
+    --attacker_model meta-llama-3-8b-instruct-abliterated-v3 \
+    --attack_method crescendomation \
+    --use_circuit_breaker \
+    --dynamic_eta \
+    --use_semantic_classifier \
+    --semantic_model unitary/toxic-bert \
+    --semantic_threshold 0.7 \
+    --max_rounds 5 \
+    --num_cases 3
+
+# Output will show:
+# NBF-LLM + CIRCUIT BREAKER INTEGRATION
+# Dynamic η modulation: True
+# Circuit breaker enabled: True
+# Semantic classifier: True
+#   Model: unitary/toxic-bert
+#   Threshold: 0.7
+#   Keyword fallback: True
+# Loading semantic classifier: unitary/toxic-bert
+# ✓ Semantic classifier loaded successfully
+```
+
+### Example 2: Disable Keyword Fallback (Pure Semantic Mode)
+
+```bash
+python3 nbf_integration/integrated_steering.py \
+    --target_model gpt-4o \
+    --attack_method opposite_day \
+    --use_semantic_classifier \
+    --no_keyword_fallback \
+    --max_rounds 3
+```
+
+### Example 3: Try Different Semantic Models
+
+```bash
+# Test with RoBERTa hate speech detector
+python3 nbf_integration/integrated_steering.py \
+    --target_model claude-3-5-sonnet \
+    --attack_method actor_attack \
+    --use_semantic_classifier \
+    --semantic_model facebook/roberta-hate-speech-dynabench-r4-target \
+    --semantic_threshold 0.75
+```
+
+### Example 4: Programmatic Usage (Python API)
 
 ```python
 from nbf_integration import DynamicNBFIntegration, NBFConfig
@@ -131,7 +194,7 @@ for msg in messages:
     print(f"Reasoning: {result['reasoning']}\n")
 ```
 
-### Example 2: Multiple Model Comparison
+### Example 5: Keyword-Only Mode (No Semantic Model)
 
 ```python
 models_to_test = [
