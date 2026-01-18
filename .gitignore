@@ -72,4 +72,5 @@ nbf_llm/.env
 test_*.py
 RUN_COMMANDS.txt
 
-nbf_llm/
+# NBF-LLM git directory (don't track nested git)
+nbf_llm/.git/
