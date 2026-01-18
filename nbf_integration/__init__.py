@@ -170,22 +170,22 @@ class DynamicNBFIntegration:
             )
             model.eval()
             
-            print(f"✓ Semantic classifier loaded successfully")
+            print(f"Semantic classifier loaded successfully")
             return model, tokenizer
             
         except ImportError:
             print("Warning: transformers library not available")
             if self.config.fallback_to_keywords:
-                print("→ Falling back to keywords")
+                print("Falling back to keywords")
             return None, None
         except Exception as e:
             print(f"Warning: Could not load semantic classifier: {e}")
             if self.config.fallback_to_keywords:
-                print("→ Falling back to keywords")
+                print("Falling back to keywords")
             return None, None
     
     def _classify_with_semantic_model(self, text: str) -> Optional[str]:
-        """Classify text using semantic model."""
+        """Classify text using semantic model with instruction pattern detection."""
         if self.semantic_classifier is None or self.semantic_tokenizer is None:
             return None
         
@@ -199,15 +199,53 @@ class DynamicNBFIntegration:
                 outputs = self.semantic_classifier(**inputs)
                 probs = torch.sigmoid(outputs.logits)[0]
             
+            labels = ['toxic', 'severe_toxic', 'obscene', 'threat', 'insult', 'identity_hate']
             max_prob = probs.max().item()
+            max_idx = probs.argmax().item()
+            max_label = labels[max_idx] if max_idx < len(labels) else 'unknown'
             
+            # Check for dangerous instruction patterns
+            text_lower = text.lower()
+            instruction_patterns = ['how to make', 'how to create', 'how to build', 'how do i make',
+                                   'instructions for', 'steps to', 'guide to', 'tutorial on',
+                                   'methods for making', 'ways to make', 'process of making']
+            dangerous_keywords = ['bomb', 'explosive', 'explosives', 'weapon', 'poison', 'drug', 
+                                'methamphetamine', 'meth', 'cocaine', 'heroin', 'fentanyl', 
+                                'detonator', 'grenade', 'ammunition', 'c4', 'tnt', 'dynamite',
+                                'amphetamine', 'mdma', 'lsd', 'narcotic']
+            
+            has_instruction = any(pattern in text_lower for pattern in instruction_patterns)
+            has_dangerous = any(keyword in text_lower for keyword in dangerous_keywords)
+            
+            # If it's a "how to make" + dangerous keyword, treat even low toxicity as harmful
+            if has_instruction and has_dangerous:
+                if max_prob > 0.0001:  # Accept almost any toxicity for dangerous instructions
+                    print(f"Semantic: HARMFUL INSTRUCTION detected")
+                    print(f"   Pattern: instruction + dangerous keyword, toxicity: {max_label}={max_prob:.3f}")
+                    return "harmful"
+            
+            # Normal toxicity check
             if max_prob > self.config.semantic_threshold:
-                return "harmful"
+                if max_label in ['threat', 'severe_toxic']:
+                    print(f"Semantic: HARMFUL content ({max_label}={max_prob:.3f})")
+                    return "harmful"
+                elif max_label in ['toxic', 'insult', 'obscene', 'identity_hate']:
+                    print(f"Semantic: SOCIAL ENGINEERING ({max_label}={max_prob:.3f})")
+                    return "social_engineering"
+                else:
+                    print(f"Semantic: HARMFUL content ({max_label}={max_prob:.3f})")
+                    return "harmful"
+            
+            # Below threshold
+            if max_prob > 0.3:
+                print(f"Semantic: Borderline ({max_label}={max_prob:.3f})")
+            else:
+                print(f"Semantic: Safe ({max_label}={max_prob:.3f})")
             
             return None
             
         except Exception as e:
-            print(f"Warning: Semantic inference failed: {e}")
+            print(f"Semantic inference failed: {e}")
             return None
     
     def compute_safety_index(self, 
@@ -310,7 +348,7 @@ class DynamicNBFIntegration:
             try:
                 context = self._classify_with_semantic_model(user_message)
                 if context is not None:
-                    print(f"🔍 Semantic: {context}")
+                    print(f"Semantic: {context}")
                     return context
             except Exception as e:
                 if not self.config.fallback_to_keywords:
