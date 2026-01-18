@@ -56,6 +56,20 @@ Thumbs.db
 # Project specific
 results/
 *.pkl
-*.json
+*.jsonl
 !package.json
 
+# Sensitive data
+nbf_llm/.env
+*.key
+*_key.txt
+
+# Large model files (optional - uncomment if not needed)
+# nbf_llm/models/*.pth
+# nbf_llm/models/*.pt
+
+# Test outputs
+test_*.py
+RUN_COMMANDS.txt
+
+nbf_llm/

@@ -117,6 +117,13 @@ Based on the literature, promising areas for enhancement include:
 If you use this implementation in research, please consider citing the relevant papers:
 
 ```bibtex
+@article{russinovich2024crescendo,
+  title={Crescendo: A Multi-Turn Jailbreak Attack on Stronger Aligned LLMs},
+  author={Russinovich, Mark and Ahmed, Syed Mahmood and Hunt, Nick and others},
+  journal={arXiv preprint arXiv:2404.01833},
+  year={2024}
+}
+
 @article{active_honeypot_2024,
   title={Active Honeypot Guardrail System: Probing and Confirming Multi-Turn LLM Jailbreaks},
   author={...},
@@ -138,11 +145,11 @@ If you use this implementation in research, please consider citing the relevant 
   year={2024}
 }
 
-@article{cee_2024,
-  title={Concept Enhancement Engineering: Enhancing the Safety of Embodied LLMs by Dynamically Steering Internal Activations},
-  author={...},
-  journal={arXiv preprint arXiv:2504.13201},
-  year={2024}
+@article{zou2023representation,
+  title={Representation Engineering: A Top-Down Approach to AI Interpretability},
+  author={Zou, Andy and Phan, Long and Chen, Sarah and others},
+  journal={arXiv preprint arXiv:2310.01405},
+  year={2023}
 }
 ```
 

@@ -2,6 +2,8 @@
 
 This project implements a circuit breaker pattern specifically designed for preventing jailbreak attacks in Large Language Models (LLMs). The circuit breaker monitors interactions and detects patterns indicative of jailbreak attempts, temporarily halting or modifying responses when suspicious behavior is detected.
 
+Note: Local execution with LM Studio or Ollama is now supported. See [OLLAMA_SETUP.md](OLLAMA_SETUP.md) for details.
+
 ## Overview
 
 The circuit breaker pattern operates in three states:
@@ -50,8 +52,35 @@ circuit-breaker/
 
 ## Installation
 
+### Local Execution with LM Studio or Ollama
+
+```bash
+# LM Studio: Start server in LM Studio UI (localhost:1234)
+# Ollama: Install and start service
+brew install ollama  # macOS
+ollama serve
+ollama pull llama3.2
+
+# Run experiments
+cd nbf_integration
+python3 integrated_steering.py \
+    --attack_method crescendomation \
+    --target_model llama3.2 \
+    --use_circuit_breaker \
+    --dynamic_eta
+```
+
+See [OLLAMA_SETUP.md](OLLAMA_SETUP.md) for detailed instructions.
+
+### Cloud-Based Execution
+
 ```bash
 pip install -r requirements.txt
+pip install -r nbf_llm/requirements.txt
+
+# Configure API keys in nbf_llm/.env
+cd nbf_llm
+cp .env.example .env  # Edit with your API keys
 ```
 
 ## Usage
