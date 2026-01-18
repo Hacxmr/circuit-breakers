@@ -55,6 +55,18 @@ class NBFConfig:
     # Safety invariance parameters
     window_size: int = 3  # Number of recent turns to analyze
     safety_decay: float = 0.9  # How quickly safety scores decay
+    
+    # Semantic classifier settings
+    use_semantic_classifier: bool = False  # Use pretrained model instead of keywords
+    semantic_model_name: str = "unitary/toxic-bert"  # HuggingFace model
+    semantic_threshold: float = 0.7  # Confidence threshold for harmful classification
+    fallback_to_keywords: bool = True  # Use keywords if semantic model unavailable
+    
+    # Semantic classifier settings
+    use_semantic_classifier: bool = False  # Use pretrained model instead of keywords
+    semantic_model_name: str = "unitary/toxic-bert"  # HuggingFace model
+    semantic_threshold: float = 0.7  # Confidence threshold for harmful classification
+    fallback_to_keywords: bool = True  # Use keywords if semantic model unavailable
 
 
 @dataclass
@@ -113,6 +125,17 @@ class DynamicNBFIntegration:
             turn_count=0
         )
         
+        # Load semantic classifier if enabled
+        self.semantic_classifier = None
+        self.semantic_tokenizer = None
+        if self.config.use_semantic_classifier:
+            try:
+                self.semantic_classifier, self.semantic_tokenizer = self._load_semantic_classifier()
+            except Exception as e:
+                print(f"Warning: Failed to load semantic classifier: {e}")
+                if not self.config.fallback_to_keywords:
+                    raise
+        
         # Context classification cache
         self.conversation_context = "general"
     
@@ -132,6 +155,59 @@ class DynamicNBFIntegration:
                 return None
         except Exception as e:
             print(f"Error loading NBF models: {e}")
+            return None
+    
+    def _load_semantic_classifier(self) -> Tuple[Optional[Any], Optional[Any]]:
+        """Load pretrained semantic classifier for content safety."""
+        try:
+            from transformers import AutoTokenizer, AutoModelForSequenceClassification
+            
+            print(f"Loading semantic classifier: {self.config.semantic_model_name}")
+            
+            tokenizer = AutoTokenizer.from_pretrained(self.config.semantic_model_name)
+            model = AutoModelForSequenceClassification.from_pretrained(
+                self.config.semantic_model_name
+            )
+            model.eval()
+            
+            print(f"✓ Semantic classifier loaded successfully")
+            return model, tokenizer
+            
+        except ImportError:
+            print("Warning: transformers library not available")
+            if self.config.fallback_to_keywords:
+                print("→ Falling back to keywords")
+            return None, None
+        except Exception as e:
+            print(f"Warning: Could not load semantic classifier: {e}")
+            if self.config.fallback_to_keywords:
+                print("→ Falling back to keywords")
+            return None, None
+    
+    def _classify_with_semantic_model(self, text: str) -> Optional[str]:
+        """Classify text using semantic model."""
+        if self.semantic_classifier is None or self.semantic_tokenizer is None:
+            return None
+        
+        try:
+            inputs = self.semantic_tokenizer(
+                text, return_tensors="pt", truncation=True, 
+                max_length=512, padding=True
+            )
+            
+            with torch.no_grad():
+                outputs = self.semantic_classifier(**inputs)
+                probs = torch.sigmoid(outputs.logits)[0]
+            
+            max_prob = probs.max().item()
+            
+            if max_prob > self.config.semantic_threshold:
+                return "harmful"
+            
+            return None
+            
+        except Exception as e:
+            print(f"Warning: Semantic inference failed: {e}")
             return None
     
     def compute_safety_index(self, 
@@ -219,7 +295,9 @@ class DynamicNBFIntegration:
     
     def classify_context(self, user_message: str) -> str:
         """
-        Classify conversation context for η modulation using multi-pattern analysis.
+        Classify conversation context for η modulation.
+        
+        Uses semantic classifier if available, falls back to keywords.
         
         Args:
             user_message: Current user message
@@ -227,6 +305,18 @@ class DynamicNBFIntegration:
         Returns:
             Context type string with confidence-based priority
         """
+        # Try semantic classifier first
+        if self.semantic_classifier is not None:
+            try:
+                context = self._classify_with_semantic_model(user_message)
+                if context is not None:
+                    print(f"🔍 Semantic: {context}")
+                    return context
+            except Exception as e:
+                if not self.config.fallback_to_keywords:
+                    return "general"
+        
+        # Keyword fallback
         message_lower = user_message.lower()
         
         # Enhanced keyword sets with semantic groupings
