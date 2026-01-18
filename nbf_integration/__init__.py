@@ -219,41 +219,119 @@ class DynamicNBFIntegration:
     
     def classify_context(self, user_message: str) -> str:
         """
-        Classify conversation context for η modulation.
+        Classify conversation context for η modulation using multi-pattern analysis.
         
         Args:
             user_message: Current user message
             
         Returns:
-            Context type string
+            Context type string with confidence-based priority
         """
         message_lower = user_message.lower()
         
-        # High-stakes domains
-        if any(kw in message_lower for kw in [
-            "drug", "chemical", "weapon", "explosive", 
-            "medical", "prescription", "diagnosis"
-        ]):
-            return "medical"
+        # Enhanced keyword sets with semantic groupings
+        CONTEXT_PATTERNS = {
+            "medical": {
+                "substances": ["drug", "chemical", "compound", "substance", "medication", 
+                             "narcotic", "opioid", "stimulant", "sedative", "hallucinogen",
+                             "methamphetamine", "cocaine", "heroin", "fentanyl", "mdma"],
+                "medical": ["prescription", "diagnosis", "symptom", "treatment", "therapy",
+                           "surgery", "medical procedure", "healthcare", "clinical"],
+                "weapons": ["weapon", "explosive", "bomb", "ammunition", "firearm", "gun",
+                           "rifle", "pistol", "grenade", "detonator", "ied"],
+                "chemistry": ["synthesis", "synthesize", "chemical reaction", "reagent",
+                            "catalyst", "precursor", "laboratory", "distillation"]
+            },
+            "social_engineering": {
+                "manipulation": ["manipulate", "deceive", "trick", "fool", "con", "dupe",
+                               "mislead", "gaslight", "coerce", "exploit"],
+                "attacks": ["phishing", "social engineer", "pretexting", "baiting",
+                          "tailgating", "quid pro quo", "impersonate"],
+                "fraud": ["scam", "fraud", "steal", "hack", "breach", "unauthorized access",
+                         "identity theft", "credential", "password", "bypass security"],
+                "harmful_content": ["spread misinformation", "fake news", "propaganda",
+                                   "harass", "bully", "threaten", "doxx", "swat"]
+            },
+            "creative": {
+                "writing": ["poem", "poetry", "story", "fiction", "novel", "narrative",
+                          "creative writing", "short story", "screenplay", "dialogue"],
+                "imagination": ["imagine", "pretend", "fantasy", "hypothetical", "suppose",
+                              "what if", "fictional", "make believe", "alternate reality"],
+                "art": ["write about", "create a story", "compose", "draft", "author",
+                       "literary", "prose", "verse", "character development"]
+            },
+            "technical": {
+                "programming": ["code", "program", "function", "class", "method", "variable",
+                              "algorithm", "data structure", "api", "library"],
+                "development": ["debug", "implement", "develop", "build", "create application",
+                              "software", "compile", "deploy", "refactor", "optimize"],
+                "technical": ["technical", "engineering", "architecture", "design pattern",
+                            "database", "sql", "query", "server", "client", "framework"]
+            }
+        }
         
-        if any(kw in message_lower for kw in [
-            "manipulate", "deceive", "social engineer", 
-            "phishing", "scam", "fraud"
-        ]):
-            return "social_engineering"
+        # Score each context based on pattern matches
+        context_scores = {}
         
-        # Safe domains
-        if any(kw in message_lower for kw in [
-            "poem", "story", "creative", "fiction", 
-            "imagine", "write about"
-        ]):
-            return "creative"
+        for context_type, categories in CONTEXT_PATTERNS.items():
+            score = 0
+            matched_patterns = []
+            
+            for category, keywords in categories.items():
+                for keyword in keywords:
+                    if keyword in message_lower:
+                        # Weight multi-word phrases higher
+                        weight = len(keyword.split()) * 2
+                        score += weight
+                        matched_patterns.append(keyword)
+            
+            if score > 0:
+                context_scores[context_type] = {
+                    'score': score,
+                    'patterns': matched_patterns
+                }
         
-        if any(kw in message_lower for kw in [
-            "code", "program", "algorithm", "function", 
-            "debug", "implement"
-        ]):
-            return "technical"
+        # Additional contextual analysis
+        
+        # Check for "how to" patterns with dangerous keywords
+        if "how to" in message_lower or "how do i" in message_lower:
+            dangerous_phrases = ["make", "create", "build", "synthesize", "produce", "manufacture"]
+            if any(phrase in message_lower for phrase in dangerous_phrases):
+                # Boost medical/harmful context if combined with dangerous action
+                if "medical" in context_scores:
+                    context_scores["medical"]["score"] *= 2
+        
+        # Check for instructional patterns
+        instructional_patterns = ["step by step", "instructions for", "guide to", "tutorial on"]
+        if any(pattern in message_lower for pattern in instructional_patterns):
+            # Boost existing harmful contexts
+            if "medical" in context_scores:
+                context_scores["medical"]["score"] *= 1.5
+            if "social_engineering" in context_scores:
+                context_scores["social_engineering"]["score"] *= 1.5
+        
+        # Check for roleplay/hypothetical framing (often used in jailbreaks)
+        roleplay_indicators = ["pretend", "roleplay", "act as", "you are a", "imagine you're"]
+        if any(indicator in message_lower for indicator in roleplay_indicators):
+            # If roleplay + harmful context, boost it
+            if "medical" in context_scores or "social_engineering" in context_scores:
+                for ctx in ["medical", "social_engineering"]:
+                    if ctx in context_scores:
+                        context_scores[ctx]["score"] *= 1.3
+        
+        # Check for negation/opposite day patterns (jailbreak technique)
+        negation_patterns = ["opposite day", "don't tell me", "refuse to", "do not provide"]
+        if any(pattern in message_lower for pattern in negation_patterns):
+            # Flag as social engineering attempt
+            if "social_engineering" not in context_scores:
+                context_scores["social_engineering"] = {'score': 5, 'patterns': ['negation_detected']}
+            else:
+                context_scores["social_engineering"]["score"] *= 2
+        
+        # Return highest scoring context
+        if context_scores:
+            best_context = max(context_scores.items(), key=lambda x: x[1]['score'])
+            return best_context[0]
         
         return "general"
     
